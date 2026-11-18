@@ -2,6 +2,7 @@ from flask import Flask,jsonify,request,send_from_directory
 from app.config import ROOT,DATA_DIR,MODULES
 from app.errors import DomainError
 from app import pipeline,store
+from app.combos import parse_form
 from app.web import register_pages
 import importlib
 def create_app():
@@ -30,7 +31,7 @@ def create_app():
     def upload():
         file=request.files.get("file")
         if not file: raise DomainError("NO_FILE","请选择CSV文件")
-        return pipeline.execute(file.read())
+        return pipeline.execute(file.read(),parse_form(request.form.get("combos")))
     @application.get("/api/runs")
     def history(): return {"runs":store.history()}
     @application.get("/api/runs/<run_id>")

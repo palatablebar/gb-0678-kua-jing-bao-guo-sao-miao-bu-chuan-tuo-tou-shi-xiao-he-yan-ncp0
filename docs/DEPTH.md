@@ -32,10 +32,15 @@
 | TRAP-12 | DST自然日 | 固定24小时 | 按当地午夜切片 | `app/modules/m5_timeliness/rules.py` | `tests/test_m5.py::test_dst_actual_elapsed_hours` |
 | TRAP-13 | 迟到妥投补传 | 按上传时间赔付 | 发生时间重建 | `app/modules/m4_paths/rules.py` | `tests/test_m4.py::test_late_upload_event_time_decides` |
 | TRAP-23 | 假日端点 | 误算全天 | 当地日半开切段 | `app/modules/m5_timeliness/rules.py` | `tests/test_m5.py::test_holiday_full_day_stops` |
+| TRAP-27 | 母子关系后补 | 母单、子单各出一份结论，赔付重复 | 正式时效归母单，子单只留证据；路径/超时/赔付各加一道唯一性校验 | `app/combos.py`、`app/modules/m4_paths/rules.py`、`app/modules/m5_timeliness/rules.py`、`app/modules/m6_compensation/rules.py` | `tests/test_combos.py::test_rerun_same_combo_is_one_batch_and_one_claim` |
+| TRAP-28 | 子单先妥投、母单未妥投 | 组合被拆成“待妥投+已妥投”两份结论 | 组合妥投需每成员妥投，否则整单待妥投并列出待妥投成员 | `app/modules/m4_paths/rules.py` | `tests/test_combos.py::test_mother_pending_and_child_missing_accept_give_one_pending_row` |
+| TRAP-29 | 组合重跑重复计赔 | 同组合多次补录各算一次 | 组合归一后参与摘要，同摘要复用批次；子单行禁止单独计赔 | `app/combos.py`、`app/pipeline.py`、`app/modules/m6_compensation/rules.py` | `tests/test_combos.py::test_combo_forms_are_equivalent` |
 
 ## 对账规则
 
 输入原始逻辑行=最终采纳来源行+隔离来源行+重复行+空白行+分段表头。派生记录用_sources保存完整来源，因此分组不丢行。业务预期合计与上游申报合计之差等于逐行差异之和。结果按输入摘要、规则版本及参数产生唯一批次，事务写入；同源重跑只复用已有批次。
+
+合箱时正式单元数少于包裹数：母单及其子单合并为一行，`accepted_inputs`仍按来源行计，因此行数平衡不变。子单申报额不进入申报合计，单独记入`superseded_reported`；组合依据在路径阶段`combos`与证据包`kind=combo`行中一致可查。
 
 ## 已知不覆盖
 

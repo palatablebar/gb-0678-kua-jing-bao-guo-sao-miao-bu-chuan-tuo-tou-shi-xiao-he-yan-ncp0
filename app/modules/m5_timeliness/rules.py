@@ -3,7 +3,9 @@ from zoneinfo import ZoneInfo
 from decimal import Decimal
 from app.values import instant,number,money
 from app.errors import DomainError
+from app.combos import normalize as normalize_combos
 HOLIDAYS={"JP":{"2026-11-03","2026-11-23"},"US":{"2026-11-26"},"DE":{"2026-10-03"}}
+CLAIM_DEDUPE="正式时效由母单统一承担，每个母单/单件只计算一次赔付"
 def working_hours(start,end,zone,holidays):
     if end<start:raise DomainError("NEGATIVE_INTERVAL","妥投早于收件")
     tz=ZoneInfo(zone);cursor=start;seconds=Decimal(0)
@@ -16,10 +18,17 @@ def working_hours(start,end,zone,holidays):
 def evaluate(rows,context):
     p=context.get("parameters",{});as_of=instant(p.get("as_of","2026-11-18T00:00:00Z"));rate=number(p.get("hourly_compensation","1.00"))
     if rate<0:raise DomainError("BAD_RATE","赔付费率不能为负")
+    # 正式时效只按一份承诺结算：子单纯属证据，不能在此另算一份超时。
+    children={child for combo in normalize_combos(p.get("combos")) for child in combo["children"]}
+    leaked=sorted({str(row.get("parcel")) for row in rows if str(row.get("parcel")) in children})
+    if leaked: raise DomainError("COMBINED_CHILD_LEAK","子单已并入母单，不能单独计算时效："+", ".join(leaked))
+    keys=[str(row.get("parcel")) for row in rows]
+    repeated=sorted({key for key in keys if keys.count(key)>1})
+    if repeated: raise DomainError("DUPLICATE_CLOCK","同一正式单元只允许一份时效结论："+", ".join(repeated))
     good=[]
     for row in rows:
         start=instant(row["accepted_at"]);end=instant(row["delivered_at"]) if row.get("delivered_at") else max(start,as_of)
         hours=working_hours(start,end,row["zone"],set(p.get("holidays",{}).get(row["destination"],HOLIDAYS.get(row["destination"],set()))))
         late=max(Decimal(0),hours-number(row["promised_hours"]));comp=min(number(row["declared_value"])*Decimal("0.10"),late*rate)
         good.append({**row,"working_hours":str(hours),"late_hours":str(late),"expected":money(comp),"sla":"超时" if late>0 else "达标","clock_end":end.isoformat()})
-    return {"rows":good,"quarantine":[],"metrics":{"parcels":len(good),"late_parcels":sum(r["sla"]=="超时" for r in good),"compensation":money(sum((number(r["expected"]) for r in good),Decimal(0)))}}
+    return {"rows":good,"quarantine":[],"metrics":{"parcels":len(good),"late_parcels":sum(r["sla"]=="超时" for r in good),"compensation":money(sum((number(r["expected"]) for r in good),Decimal(0))),"claim_basis":CLAIM_DEDUPE,"combined_units":sum(r.get("combo") is not None for r in good)}}

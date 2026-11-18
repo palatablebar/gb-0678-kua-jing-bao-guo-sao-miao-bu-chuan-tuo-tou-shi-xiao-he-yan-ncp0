@@ -2,6 +2,7 @@ import time
 from app.config import ROOT,MODULES
 from app.errors import DomainError
 from app.values import scalar
+from app.combos import canonical_parameters
 from app.manifest import digest,manifest
 from app import store
 from app.modules.m1_scans.rules import evaluate as stage1
@@ -16,7 +17,7 @@ def load_sample(name):
     if name not in {"dirty.csv","clean.csv","legacy.csv"}: raise DomainError("BAD_SAMPLE","样例不存在",404)
     return (ROOT/"sample_data"/name).read_bytes()
 def calculate(raw,params=None,stop=6):
-    params=params or {};started=time.monotonic();context={"parameters":params,"raw":raw,"quarantine":[]};stages=[];rows=[]
+    params=canonical_parameters(params);started=time.monotonic();context={"parameters":params,"raw":raw,"quarantine":[]};stages=[];rows=[]
     for index,stage in enumerate(STAGES[:stop+1]):
         result=stage(raw if index==0 else rows,context)
         result=scalar(result);rows=result["rows"]
